@@ -74,7 +74,7 @@ public class TlsHelper {
         loadGmProvider();
 
         SslProvider provider;
-        if (OpenSsl.isAvailable()) {
+        if (OpenSsl.isAvailable() && !tlsGmtlsEnable) {
             provider = SslProvider.OPENSSL;
             LOGGER.info("Using OpenSSL provider");
         } else {
