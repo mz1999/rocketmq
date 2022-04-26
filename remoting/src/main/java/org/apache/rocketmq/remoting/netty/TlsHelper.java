@@ -28,36 +28,15 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.Provider;
+import java.security.Security;
 import java.security.cert.CertificateException;
 import java.util.Properties;
 import org.apache.rocketmq.remoting.common.RemotingHelper;
 import org.apache.rocketmq.logging.InternalLogger;
 import org.apache.rocketmq.logging.InternalLoggerFactory;
 
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_CLIENT_AUTHSERVER;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_CLIENT_CERTPATH;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_CLIENT_KEYPASSWORD;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_CLIENT_KEYPATH;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_CLIENT_TRUSTCERTPATH;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_SERVER_AUTHCLIENT;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_SERVER_CERTPATH;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_SERVER_KEYPASSWORD;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_SERVER_KEYPATH;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_SERVER_NEED_CLIENT_AUTH;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_SERVER_TRUSTCERTPATH;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.TLS_TEST_MODE_ENABLE;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsClientAuthServer;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsClientCertPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsClientKeyPassword;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsClientKeyPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsClientTrustCertPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerAuthClient;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerCertPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerKeyPassword;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerKeyPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerNeedClientAuth;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsServerTrustCertPath;
-import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.tlsTestModeEnable;
+import static org.apache.rocketmq.remoting.netty.TlsSystemConfig.*;
 
 public class TlsHelper {
 
@@ -92,6 +71,7 @@ public class TlsHelper {
         File configFile = new File(TlsSystemConfig.tlsConfigFile);
         extractTlsConfigFromFile(configFile);
         logTheFinalUsedTlsConfig();
+        loadGmProvider();
 
         SslProvider provider;
         if (OpenSsl.isAvailable()) {
@@ -111,7 +91,6 @@ public class TlsHelper {
                     .build();
             } else {
                 SslContextBuilder sslContextBuilder = SslContextBuilder.forClient().sslProvider(SslProvider.JDK);
-
 
                 if (!tlsClientAuthServer) {
                     sslContextBuilder.trustManager(InsecureTrustManagerFactory.INSTANCE);
@@ -137,12 +116,18 @@ public class TlsHelper {
                     .clientAuth(ClientAuth.OPTIONAL)
                     .build();
             } else {
-                SslContextBuilder sslContextBuilder = SslContextBuilder.forServer(
-                    !isNullOrEmpty(tlsServerCertPath) ? new FileInputStream(tlsServerCertPath) : null,
-                    !isNullOrEmpty(tlsServerKeyPath) ? decryptionStrategy.decryptPrivateKey(tlsServerKeyPath, false) : null,
-                    !isNullOrEmpty(tlsServerKeyPassword) ? tlsServerKeyPassword : null)
-                    .sslProvider(provider);
-
+                SslContextBuilder sslContextBuilder;
+                if (tlsGmtlsEnable) {
+                    sslContextBuilder = SslContextBuilder.forServerGmssl(tlsServerKeyPath, tlsServerKeyPassword)
+                                                         .sslProvider(provider);
+                } else {
+                    sslContextBuilder = SslContextBuilder
+                            .forServer(!isNullOrEmpty(tlsServerCertPath)? new FileInputStream(tlsServerCertPath) : null,
+                                       !isNullOrEmpty(tlsServerKeyPath)?
+                                               decryptionStrategy.decryptPrivateKey(tlsServerKeyPath, false) : null,
+                                       !isNullOrEmpty(tlsServerKeyPassword)? tlsServerKeyPassword : null)
+                            .sslProvider(provider);
+                }
                 if (!tlsServerAuthClient) {
                     sslContextBuilder.trustManager(InsecureTrustManagerFactory.INSTANCE);
                 } else {
@@ -192,6 +177,8 @@ public class TlsHelper {
         tlsClientCertPath = properties.getProperty(TLS_CLIENT_CERTPATH, tlsClientCertPath);
         tlsClientAuthServer = Boolean.parseBoolean(properties.getProperty(TLS_CLIENT_AUTHSERVER, String.valueOf(tlsClientAuthServer)));
         tlsClientTrustCertPath = properties.getProperty(TLS_CLIENT_TRUSTCERTPATH, tlsClientTrustCertPath);
+
+        tlsGmtlsEnable = Boolean.parseBoolean(properties.getProperty(TLS_GMTLS_ENABLE, String.valueOf(tlsGmtlsEnable)));
     }
 
     private static void logTheFinalUsedTlsConfig() {
@@ -209,6 +196,8 @@ public class TlsHelper {
         LOGGER.info("{} = {}", TLS_CLIENT_CERTPATH, tlsClientCertPath);
         LOGGER.info("{} = {}", TLS_CLIENT_AUTHSERVER, tlsClientAuthServer);
         LOGGER.info("{} = {}", TLS_CLIENT_TRUSTCERTPATH, tlsClientTrustCertPath);
+
+        LOGGER.info("{} = {}", TLS_GMTLS_ENABLE, tlsGmtlsEnable);
     }
 
     private static ClientAuth parseClientAuthMode(String authMode) {
@@ -230,5 +219,20 @@ public class TlsHelper {
      */
     private static boolean isNullOrEmpty(String s) {
         return s == null || s.isEmpty();
+    }
+
+    private static void loadGmProvider() throws IOException {
+        if (tlsGmtlsEnable) {
+            LOGGER.warn("load GMTLS provider...");
+            System.setProperty("com.apusic.security.ssl.EnableGMTLS", "true");
+            try {
+                Object provider = Class.forName("cn.gmssl.jce.provider.GMJCE").newInstance();
+                Security.insertProviderAt((Provider) provider, 1);
+                provider = Class.forName("cn.gmssl.jsse.provider.GMJSSE").newInstance();
+                Security.insertProviderAt((Provider) provider, 2);
+            }catch(Exception e) {
+                throw new IOException("load GMTLS provider exception", e);
+            }
+        }
     }
 }

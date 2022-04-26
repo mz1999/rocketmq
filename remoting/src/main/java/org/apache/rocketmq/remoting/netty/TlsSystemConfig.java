@@ -39,6 +39,8 @@ public class TlsSystemConfig {
     public static final String TLS_CLIENT_AUTHSERVER = "tls.client.authServer";
     public static final String TLS_CLIENT_TRUSTCERTPATH = "tls.client.trustCertPath";
 
+    public static final String TLS_GMTLS_ENABLE = "tls.gmtls.enable";
+
 
     /**
      * To determine whether use SSL in client-side, include SDK client and BrokerOuterAPI
@@ -122,4 +124,6 @@ public class TlsSystemConfig {
      * except {@link TlsSystemConfig#tlsMode} and {@link TlsSystemConfig#tlsEnable}
      */
     public static String tlsConfigFile = System.getProperty(TLS_CONFIG_FILE, "/etc/rocketmq/tls.properties");
+
+    public static boolean tlsGmtlsEnable = Boolean.parseBoolean(System.getProperty(TLS_GMTLS_ENABLE, "false"));
 }
