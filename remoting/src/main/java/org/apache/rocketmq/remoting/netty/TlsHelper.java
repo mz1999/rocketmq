@@ -92,7 +92,7 @@ public class TlsHelper {
             } else {
                 SslContextBuilder sslContextBuilder = SslContextBuilder.forClient().sslProvider(SslProvider.JDK);
 
-                if (!tlsClientAuthServer) {
+                if (!tlsClientAuthServer || tlsGmtlsEnable) {
                     sslContextBuilder.trustManager(InsecureTrustManagerFactory.INSTANCE);
                 } else {
                     if (!isNullOrEmpty(tlsClientTrustCertPath)) {
